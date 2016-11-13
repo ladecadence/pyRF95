@@ -3,6 +3,7 @@
 import time
 import sys
 import spidev
+import RPi.GPIO as GPIO
 
 FXOSC=32000000
 FSTEP = FXOSC / 524288
@@ -196,17 +197,28 @@ RHModeRx=4
 RHModeCad=5
 
 class RF95:
-	def __init__(self,cs=0):
+	def __init__(self, cs=0, int_pin=25):
 		# init class
 		self.spi = spidev.SpiDev()
 		self.cs = cs
+		self.int_pin = int_pin
 		self.mode = RHModeInitialising
-
+		self.buf=[] 		# RX Buffer for interrupts
+		self.buflen=0 		# RX Buffer length
+		self.last_rssi=-99 	# last packet RSSI
+		self.rx_bad = 0 	# rx error count
+		self.tx_good = 0 	# tx packets sent
+	
 	def init(self):
 		# open SPI and initialize RF95
 		self.spi.open(0,self.cs)
 		self.spi.max_speed_hz = 488000
 		self.spi.close()
+
+		# set interrupt pin
+		GPIO.setmode(GPIO.BCM)
+		GPIO.setup(self.int_pin, GPIO.IN)
+		GPIO.add_event_detect(self.int_pin, GPIO.RISING, callback=self.handle_interrupt)
 
 		# set sleep mode and LoRa mode
 		self.spi_write(REG_01_OP_MODE, MODE_SLEEP | LONG_RANGE_MODE)
@@ -224,9 +236,41 @@ class RF95:
 		self.set_mode_idle()
 
 		self.set_modem_config(Bw125Cr45Sf128)
-		self.set_preamble_lenght(8)
+		self.set_preamble_length(8)
 		
 		return True
+
+	def handle_interrupt(self, channel):
+		# Read the interrupt register
+		irq_flags = self.spi_read(REG_12_IRQ_FLAGS)
+
+		if self.mode == RHModeRx and irq_flags & (RX_TIMEOUT | PAYLOAD_CRC_ERROR):
+			self.rx_bad = self.rx_bad + 1
+		elif self.mode == RHModeRx and irq_flags & RX_DONE:
+			# packet received
+			length = self.spi_read(REG_13_RX_NB_BYTES)
+			# Reset the fifo read ptr to the beginning of the packet
+			self.spi_write(REG_0D_FIFO_ADDR_PTR, self.spi_read(REG_10_FIFO_RX_CURRENT_ADDR))
+			self.buf = self.spi_read_data(REG_00_FIFO, lenght)
+			self.buflen = lenght
+			# clear IRQ flags
+			self.spi_write(REG_12_IRQ_FLAGS, 0xff)
+
+			# save RSSI
+			self.last_rssi = self.spi_read(REG_1A_PKT_RSSI_VALUE) - 137
+			# We have received a message
+			self.set_mode_idle()
+
+		elif self.mode == RHModeTx and irq_flags & TX_DONE:
+			self.tx_good = self.tx_good + 1
+			self.set_mode_idle()
+		elif self.mode == RHModeCad and irq_flags & CAD_DONE:
+			self.cad = irq_flags & CAD_DETECTED
+			self.set_mode_idle()
+    
+		self.spi_write(REG_12_IRQ_FLAGS, 0xff) # Clear all IRQ flags
+
+
 
 	def spi_write(self, reg, data):
 		self.spi.open(0,self.cs)
@@ -243,8 +287,20 @@ class RF95:
 	def spi_write_data(self, reg, data):
 		self.spi.open(0, self.cs)
 		# transfer byte list
-		self.spi.xfer2([reg | SPI_WRITE_MASK] + data)
+		self.spi.xfer2([reg | SPI_WRITE_MASK])
+		self.spi.xfer2(data)
 		self.spi.close()
+
+	def spi_read_data(self, reg, length):
+		data = []
+		self.spi.open(0, self.cs)
+		# start address
+		self.spi.xfer2([reg & ~SPI_WRITE_MASK])
+		while lenght:
+			data = data + self.spi.xfer2([0])
+			length = length - 1
+		self.spi.close()
+		return data
 
 	def set_frequency(self, freq):
 		freq_value = int((freq * 1000000.0) / FSTEP)
@@ -300,9 +356,9 @@ class RF95:
 		self.spi_write(REG_1E_MODEM_CONFIG2, config[1])
 		self.spi_write(REG_26_MODEM_CONFIG3, config[2])
 		
-	def set_preamble_lenght(self, lenght):
-		self.spi_write(REG_20_PREAMBLE_MSB, lenght >> 8)
-		self.spi_write(REG_21_PREAMBLE_LSB, lenght & 0xff)
+	def set_preamble_length(self, length):
+		self.spi_write(REG_20_PREAMBLE_MSB, length >> 8)
+		self.spi_write(REG_21_PREAMBLE_LSB, length & 0xff)
 
 
 	# send data list
@@ -316,7 +372,7 @@ class RF95:
 
 		# write data
 		self.spi_write_data(REG_00_FIFO, data)
-		self.spi_write(REG_22_PAYLOAD_LENGTH, len(data))
+		self.spi_write(REG_22_PAYLOAD_LENGTH, len(data)-4)
 
 		self.set_mode_tx()
 		return True
@@ -330,7 +386,7 @@ class RF95:
 
 	
 if __name__ == "__main__":
-	rf95 = RF95(0)
+	rf95 = RF95(0, 25)
 	if not rf95.init():
 		print("RF95 not found")
 		quit(1)
