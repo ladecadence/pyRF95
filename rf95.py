@@ -226,7 +226,10 @@ class RF95:
 		self.last_rssi=-99 	# last packet RSSI
 		self.rx_bad = 0 	# rx error count
 		self.tx_good = 0 	# tx packets sent
+		self.rx_good = 0 	# rx packets recv
+		self.rx_buf_valid = False 
 	
+
 	def init(self):
 		# open SPI and initialize RF95
 		self.spi.open(0,self.cs)
@@ -267,17 +270,21 @@ class RF95:
 		elif self.mode == RHModeRx and irq_flags & RX_DONE:
 			# packet received
 			length = self.spi_read(REG_13_RX_NB_BYTES)
+			print(length)
 			# Reset the fifo read ptr to the beginning of the packet
 			self.spi_write(REG_0D_FIFO_ADDR_PTR, self.spi_read(REG_10_FIFO_RX_CURRENT_ADDR))
-			self.buf = self.spi_read_data(REG_00_FIFO, lenght)
-			self.buflen = lenght
+			self.buf = self.spi_read_data(REG_00_FIFO, length)
+			self.buflen = length
 			# clear IRQ flags
 			self.spi_write(REG_12_IRQ_FLAGS, 0xff)
 
 			# save RSSI
 			self.last_rssi = self.spi_read(REG_1A_PKT_RSSI_VALUE) - 137
 			# We have received a message
+			self.rx_good = self.rx_good + 1
+			self.rx_buf_valid = True
 			self.set_mode_idle()
+
 
 		elif self.mode == RHModeTx and irq_flags & TX_DONE:
 			self.tx_good = self.tx_good + 1
@@ -305,20 +312,18 @@ class RF95:
 	def spi_write_data(self, reg, data):
 		self.spi.open(0, self.cs)
 		# transfer byte list
-		self.spi.xfer2([reg | SPI_WRITE_MASK])
-		self.spi.xfer2(data)
+		self.spi.xfer2([reg | SPI_WRITE_MASK] + data)
+		#self.spi.xfer2(data)
 		self.spi.close()
 
 	def spi_read_data(self, reg, length):
 		data = []
 		self.spi.open(0, self.cs)
 		# start address
-		self.spi.xfer2([reg & ~SPI_WRITE_MASK])
-		while lenght:
-			data = data + self.spi.xfer2([0])
-			length = length - 1
+		#self.spi.xfer2([reg & ~SPI_WRITE_MASK])
+		data = self.spi.xfer2([reg & ~SPI_WRITE_MASK] + [0]*length)
 		self.spi.close()
-		return data
+		return data[1:]
 
 	def set_frequency(self, freq):
 		freq_value = int((freq * 1000000.0) / FSTEP)
@@ -383,17 +388,42 @@ class RF95:
 	def send(self, data):
 		if len(data) > MAX_MESSAGE_LEN:
 			return False
-		
+	
+		self.wait_packet_sent()	
 		self.set_mode_idle()
 		# beggining of FIFO
+		#self.spi_write(REG_0E_FIFO_TX_BASE_ADDR, 0)
 		self.spi_write(REG_0D_FIFO_ADDR_PTR, 0)
 
 		# write data
 		self.spi_write_data(REG_00_FIFO, data)
-		self.spi_write(REG_22_PAYLOAD_LENGTH, len(data)-4)
+		self.spi_write(REG_22_PAYLOAD_LENGTH, len(data))
 
 		self.set_mode_tx()
 		return True
+
+	def wait_packet_sent(self):
+		while self.mode == RHModeTx:
+			pass
+		return True
+
+	def available(self):
+		if self.mode == RHModeTx:
+			return False
+		self.set_mode_rx()
+		return self.rx_buf_valid
+
+	def clear_rx_buf(self):
+		self.rx_buf_valid = False
+		self.buflen = 0
+
+	# receive data list
+	def recv(self):
+		if not self.available():
+			return False
+		data = self.buf
+		self.clear_rx_buf()
+		return data
 
 	# helper method to send strings
 	def str_to_data(self, string):
@@ -415,8 +445,17 @@ if __name__ == "__main__":
 	rf95.set_tx_power(5)
 	#rf95.set_modem_config(Bw31_25Cr48Sf512)
 
+	print("Sending...")
 	rf95.send(rf95.str_to_data("$TELEMETRY TEST"))
-	time.sleep(2)
+	rf95.wait_packet_sent()
+	print("Sent!")
+	while not rf95.available():
+		pass
+	data = rf95.recv()
+	print (data)
+	for i in data:
+		print(chr(i), end="")
+	print()
 	rf95.set_mode_idle()
 
 
