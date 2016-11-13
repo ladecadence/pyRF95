@@ -220,6 +220,7 @@ class RF95:
 		self.spi_write(REG_0E_FIFO_TX_BASE_ADDR, 0)
 		self.spi_write(REG_0F_FIFO_RX_BASE_ADDR, 0)
 
+		# default mode
 		self.set_mode_idle()
 
 		self.set_modem_config(Bw125Cr45Sf128)
@@ -229,6 +230,7 @@ class RF95:
 
 	def spi_write(self, reg, data):
 		self.spi.open(0,self.cs)
+		# transfer one byte
 		self.spi.xfer2([reg | SPI_WRITE_MASK, data])
 		self.spi.close()
 
@@ -240,6 +242,7 @@ class RF95:
 
 	def spi_write_data(self, reg, data):
 		self.spi.open(0, self.cs)
+		# transfer byte list
 		self.spi.xfer2([reg | SPI_WRITE_MASK] + data)
 		self.spi.close()
 
@@ -250,16 +253,6 @@ class RF95:
 		self.spi_write(REG_07_FRF_MID, (freq_value>>8)&0xff)
 		self.spi_write(REG_08_FRF_LSB, (freq_value)&0xff)
 	
-#	def set_modem_params(self, implicit_explicit, error_coding, bandwidth, spreading_factor, optimize_low_datarate):
-#		self.spi_write(REG_1D_MODEM_CONFIG1, implicit_explicit | error_coding | bandwidth)
-#		self.spi_write(REG_1E_MODEM_CONFIG2, spreading_factor | CRC_ON)
-#		self.spi_write(REG_26_MODEM_CONFIG3, optimize_low_datarate | 0x04)
-#		self.spi_write(REG_31_DETECT_OPT, (self.spi_read(REG_31_DETECT_OPT) & 0xf8) | (lambda: 0x05, lambda: 0x03)[spreading_factor == SPREADING_FACTOR_64CPS])
-#		self.spi_write(REG_37_DETECTION_THRESHOLD, (lambda: 0x0c, lambda: 0x0a)[spreading_factor == SPREADING_FACTOR_64CPS])
-#		
-#		self.spi_write(REG_22_PAYLOAD_LENGTH, 255)
-#		self.spi_write(REG_13_RX_NB_BYTES, 255)
-
 	def set_mode_idle(self):
 		if self.mode != RHModeIdle:
 			self.spi_write(REG_01_OP_MODE, MODE_STDBY)
@@ -301,6 +294,7 @@ class RF95:
 
 		self.spi_write(REG_09_PA_CONFIG, PA_SELECT | (power-5))
 
+	# set a default mode
 	def set_modem_config(self, config):
 		self.spi_write(REG_1D_MODEM_CONFIG1, config[0])
 		self.spi_write(REG_1E_MODEM_CONFIG2, config[1])
@@ -311,6 +305,7 @@ class RF95:
 		self.spi_write(REG_21_PREAMBLE_LSB, lenght & 0xff)
 
 
+	# send data list
 	def send(self, data):
 		if len(data) > MAX_MESSAGE_LEN:
 			return False
@@ -326,6 +321,7 @@ class RF95:
 		self.set_mode_tx()
 		return True
 
+	# helper method to send strings
 	def str_to_data(self, string):
 		data = []
 		for i in string:
@@ -345,7 +341,7 @@ if __name__ == "__main__":
 	rf95.set_tx_power(5)
 	#rf95.set_modem_config(Bw31_25Cr48Sf512)
 
-	rf95.send(rf95.str_to_data("$ola ke ase"))
+	rf95.send(rf95.str_to_data("$TELEMETRY TEST"))
 	time.sleep(2)
 	rf95.set_mode_idle()
 
