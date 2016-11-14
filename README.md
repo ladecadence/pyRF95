@@ -21,34 +21,39 @@ Then you can set channel, TX Power, and predefined modes of operation:
 
 ### Example
 
-	# Create rf95 object with CS0 and external interrupt on pin 25
-	rf95 = RF95(0, 25)
+```python
+import rf95
 
-	if not rf95.init(): # returns True if found
-		print("RF95 not found")
-		quit(1)
-	else:
-		print("RF95 LoRa mode ok")
+# Create rf95 object with CS0 and external interrupt on pin 25
+rf95 = RF95(0, 25)
 
-	# set frequency, power and mode
-	rf95.set_frequency(868.5)
-	rf95.set_tx_power(5)
-	rf95.set_modem_config(Bw31_25Cr48Sf512)
+if not rf95.init(): # returns True if found
+	print("RF95 not found")
+	quit(1)
+else:
+	print("RF95 LoRa mode ok")
 
-	# Send some data
-	rf95.send([0x00, 0x01, 0x02, 0x03])
-	rf95.wait_packet_sent()
-	# Send a string
-	rf95.send(rf95.str_to_data("$TELEMETRY TEST"))
-	rf95.wait_packet_sent()
-	
-	# Wait until data is available 
-	while not rf95.available():
-		pass
-	# Receive
-	data = rf95.recv()
-	print (data)
-	for i in data:
-		print(chr(i), end="")
-	print()
-	rf95.set_mode_idle()
+# set frequency, power and mode
+rf95.set_frequency(868.5)
+rf95.set_tx_power(5)
+rf95.set_modem_config(Bw31_25Cr48Sf512)
+
+# Send some data
+rf95.send([0x00, 0x01, 0x02, 0x03])
+rf95.wait_packet_sent()
+# Send a string
+rf95.send(rf95.str_to_data("$TELEMETRY TEST"))
+rf95.wait_packet_sent()
+
+# Wait until data is available 
+while not rf95.available():
+	pass
+# Receive
+data = rf95.recv()
+print (data)
+for i in data:
+	print(chr(i), end="")
+print()
+rf95.set_mode_idle()
+```
+
