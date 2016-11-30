@@ -217,12 +217,12 @@ Bw125Cr48Sf4096 = (0x78,   0xc4,    0x00)
 SPI_WRITE_MASK=0x80
 
 # Modes
-RHModeInitialising=0
-RHModeSleep=1
-RHModeIdle=2
-RHModeTx=3
-RHModeRx=4
-RHModeCad=5
+RADIO_MODE_INITIALISING=0
+RADIO_MODE_SLEEP=1
+RADIO_MODE_IDLE=2
+RADIO_MODE_TX=3
+RADIO_MODE_RX=4
+RADIO_MODE_CAD=5
 
 class RF95:
 	def __init__(self, cs=0, int_pin=25):
@@ -230,7 +230,7 @@ class RF95:
 		self.spi = spidev.SpiDev()
 		self.cs = cs
 		self.int_pin = int_pin
-		self.mode = RHModeInitialising
+		self.mode = RADIO_MODE_INITIALISING
 		self.buf=[] 		# RX Buffer for interrupts
 		self.buflen=0 		# RX Buffer length
 		self.last_rssi=-99 	# last packet RSSI
@@ -275,9 +275,9 @@ class RF95:
 		# Read the interrupt register
 		irq_flags = self.spi_read(REG_12_IRQ_FLAGS)
 
-		if self.mode == RHModeRx and irq_flags & (RX_TIMEOUT | PAYLOAD_CRC_ERROR):
+		if self.mode == RADIO_MODE_RX and irq_flags & (RX_TIMEOUT | PAYLOAD_CRC_ERROR):
 			self.rx_bad = self.rx_bad + 1
-		elif self.mode == RHModeRx and irq_flags & RX_DONE:
+		elif self.mode == RADIO_MODE_RX and irq_flags & RX_DONE:
 			# packet received
 			length = self.spi_read(REG_13_RX_NB_BYTES)
 			print(length)
@@ -296,10 +296,10 @@ class RF95:
 			self.set_mode_idle()
 
 
-		elif self.mode == RHModeTx and irq_flags & TX_DONE:
+		elif self.mode == RADIO_MODE_TX and irq_flags & TX_DONE:
 			self.tx_good = self.tx_good + 1
 			self.set_mode_idle()
-		elif self.mode == RHModeCad and irq_flags & CAD_DONE:
+		elif self.mode == RADIO_MODE_CAD and irq_flags & CAD_DONE:
 			self.cad = irq_flags & CAD_DETECTED
 			self.set_mode_idle()
     
@@ -323,17 +323,15 @@ class RF95:
 		self.spi.open(0, self.cs)
 		# transfer byte list
 		self.spi.xfer2([reg | SPI_WRITE_MASK] + data)
-		#self.spi.xfer2(data)
 		self.spi.close()
 
 	def spi_read_data(self, reg, length):
 		data = []
 		self.spi.open(0, self.cs)
-		# start address
-		#self.spi.xfer2([reg & ~SPI_WRITE_MASK])
+		# start address + amount of bytes to read
 		data = self.spi.xfer2([reg & ~SPI_WRITE_MASK] + [0]*length)
 		self.spi.close()
-		return data[1:]
+		return data[1:] # all but first byte
 
 	def set_frequency(self, freq):
 		freq_value = int((freq * 1000000.0) / FSTEP)
@@ -343,27 +341,27 @@ class RF95:
 		self.spi_write(REG_08_FRF_LSB, (freq_value)&0xff)
 	
 	def set_mode_idle(self):
-		if self.mode != RHModeIdle:
+		if self.mode != RADIO_MODE_IDLE:
 			self.spi_write(REG_01_OP_MODE, MODE_STDBY)
-			self.mode = RHModeIdle
+			self.mode = RADIO_MODE_IDLE
 
 	def sleep(self):
-		if self.mode != RHModeSleep:
+		if self.mode != RADIO_MODE_SLEEP:
 			self.spi_write(REG_01_OP_MODE, MODE_SLEEP)
-			self.mode = RHModeSleep
+			self.mode = RADIO_MODE_SLEEP
 		return True
 
 	def set_mode_rx(self):
-		if self.mode != RHModeRx:
+		if self.mode != RADIO_MODE_RX:
 			self.spi_write(REG_01_OP_MODE, MODE_RXCONTINUOUS)
 			self.spi_write(REG_40_DIO_MAPPING1, 0x00)
-			self.mode = RHModeRx
+			self.mode = RADIO_MODE_RX
 
 	def set_mode_tx(self):
-		if self.mode != RHModeTx:
+		if self.mode != RADIO_MODE_TX:
 			self.spi_write(REG_01_OP_MODE, MODE_TX)
 			self.spi_write(REG_40_DIO_MAPPING1, 0x40)
-			self.mode = RHModeTx	
+			self.mode = RADIO_MODE_TX	
 		return True
 
 
@@ -426,16 +424,17 @@ class RF95:
 		self.spi_write_data(REG_00_FIFO, data)
 		self.spi_write(REG_22_PAYLOAD_LENGTH, len(data))
 
+                # put radio in TX mode
 		self.set_mode_tx()
 		return True
 
 	def wait_packet_sent(self):
-		while self.mode == RHModeTx:
+		while self.mode == RADIO_MODE_TX:
 			pass
 		return True
 
 	def available(self):
-		if self.mode == RHModeTx:
+		if self.mode == RADIO_MODE_TX:
 			return False
 		self.set_mode_rx()
 		return self.rx_buf_valid
@@ -452,6 +451,13 @@ class RF95:
 		self.clear_rx_buf()
 		return data
 
+	# helper method to send bytes
+	def bytes_to_data(self, bytelist):
+		data = []
+		for i in bytelist:
+			data.append(i)
+		return data
+
 	# helper method to send strings
 	def str_to_data(self, string):
 		data = []
@@ -459,7 +465,7 @@ class RF95:
 			data.append(ord(i))
 		return data
 
-	
+# Example, send two strings and (uncomment to) receive and print a reply
 if __name__ == "__main__":
 	rf95 = RF95(0, 25)
 	if not rf95.init():
@@ -468,21 +474,32 @@ if __name__ == "__main__":
 	else:
 		print("RF95 LoRa mode ok")
 
+        # set frequency and power
 	rf95.set_frequency(868.5)
 	rf95.set_tx_power(5)
+        # Custom predefined mode
 	#rf95.set_modem_config(Bw31_25Cr48Sf512)
 
+	telemetry_string2 = "$$ASHAB!4331.52N/00540.05WO0/0.020/A=154.3/V=8.12/P=1002.0/TI=21.40/TO=19.83/23-04-2016/19:52:49/GPS=43.525415N,005.667503W/SATS=7/AR=2.3/EA1IDZ test baliza APRS/SSTV ea1idz@ladecadence.net"	
+	telemetry_string = "$$ASHAB!4331.52N/00540.05WO0/0.020/A=37.2/V=7.64/P=1018.0/TI=29.50/TO=26.94/23-04-2016/19:52:49/GPS=43.525415N,005.667503W/SATS=4/AR=1.5/EA1IDZ test baliza APRS/SSTV ea1idz@ladecadence.net"	
+
 	print("Sending...")
-	rf95.send(rf95.str_to_data("$TELEMETRY TEST"))
+	rf95.send(rf95.str_to_data(telemetry_string))
 	rf95.wait_packet_sent()
 	print("Sent!")
-	while not rf95.available():
-		pass
-	data = rf95.recv()
-	print (data)
-	for i in data:
-		print(chr(i), end="")
-	print()
+	time.sleep(5);
+	rf95.send(rf95.str_to_data(telemetry_string2))
+	rf95.wait_packet_sent()
+	print("Sent!")
+
+	# now wait for reply
+        #while not rf95.available():
+	#	pass
+	#data = rf95.recv()
+	#print (data)
+	#for i in data:
+	#	print(chr(i), end="")
+	#print()
 	rf95.set_mode_idle()
 
 
