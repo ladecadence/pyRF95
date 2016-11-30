@@ -14,12 +14,12 @@ ssdv_filename = sys.argv[1]
 try:
     ssdv_file = open(ssdv_filename, "rb")
 except IOError as e:
-    print "Could not open the file"
-    print "I/O error({0}): {1}".format(e.errno, e.strerror)
+    print ("Could not open the file")
+    print ("I/O error({0}): {1}".format(e.errno, e.strerror))
     exit(1)
 
 if os.path.getsize(ssdv_filename)/256 != 0:
-    print "File does not look like a SSDV image"
+    print ("File does not look like a SSDV image")
     exit(1)
 
 # ok, get number of packets to send
