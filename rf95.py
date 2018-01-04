@@ -23,8 +23,8 @@ import sys
 import spidev
 import RPi.GPIO as GPIO
 
-FXOSC=32000000
-FSTEP = FXOSC / 524288
+FXOSC=32000000.0
+FSTEP = FXOSC / 524288.0
 
 # Register names (LoRa Mode, from table 85)
 REG_00_FIFO=0x00
