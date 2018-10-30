@@ -317,18 +317,21 @@ class RF95:
 
     def spi_write(self, reg, data):
         self.spi.open(0,self.cs)
+        self.spi.max_speed_hz = 488000 # spi speed is reset on opening, change it
         # transfer one byte
         self.spi.xfer2([reg | SPI_WRITE_MASK, data])
         self.spi.close()
 
     def spi_read(self, reg):
         self.spi.open(0,self.cs)
+        self.spi.max_speed_hz = 488000
         data = self.spi.xfer2([reg & ~SPI_WRITE_MASK, 0])
         self.spi.close()
         return data[1]
 
     def spi_write_data(self, reg, data):
         self.spi.open(0, self.cs)
+        self.spi.max_speed_hz = 488000
         # transfer byte list
         self.spi.xfer2([reg | SPI_WRITE_MASK] + data)
         self.spi.close()
@@ -336,6 +339,7 @@ class RF95:
     def spi_read_data(self, reg, length):
         data = []
         self.spi.open(0, self.cs)
+        self.spi.max_speed_hz = 488000
         # start address + amount of bytes to read
         data = self.spi.xfer2([reg & ~SPI_WRITE_MASK] + [0]*length)
         self.spi.close()
